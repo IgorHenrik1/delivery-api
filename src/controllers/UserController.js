@@ -1,14 +1,91 @@
+const { hash, compare } = require('bcryptjs');
+const AppError = require('../utils/AppError');
+
+const sqliteConnection = require('../database/sqlite');
+
 class UsersController {
     async create(req, res) {
-        const { name, email, password, telefone } = req.body;
+        const { name, email, password, address, phone } = req.body;
+        const database = await sqliteConnection();
+        const checkUserExists = await database.get(
+            'SELECT * FROM users WHERE email = (?)',
+            [email],
+        );
 
-        const regexEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
-        if (regexEmail.test(email)) {
+        if (checkUserExists) {
+            throw new AppError('Este e-mail já está em uso.');
         }
 
-        res.json({ name, email, password, telefone });
+        const hashedPassword = await hash(password, 8);
+        await database.run(
+            'INSERT INTO users(name, email, password, address, phone ) VALUES (?, ?, ?, ?,?)',
+            [name, email, hashedPassword, address, phone],
+        );
+        return res.status(201).json();
+    }
+
+    async update(req, res) {
+        const { name, email, password, old_password, address, phone } =
+            req.body;
+        const user_id = req.user.id;
+        const database = await sqliteConnection();
+        const user = await database.get('SELECT * FROM users WHERE id = (?)', [
+            user_id,
+        ]);
+        if (!user) {
+            throw new AppError('Usuário não encontrado');
+        }
+
+        const userWithUpdatedEmail = await database.get(
+            'SELECT * FROM users WHERE email = (?)',
+            [email],
+        );
+        if (userWithUpdatedEmail && userWithUpdatedEmail.id !== user.id) {
+            throw new AppError('Este e-mail já está em uso.');
+        }
+
+        user.name = name ?? user.name;
+        user.email = email ?? user.email;
+        user.address = address ?? user.address;
+        user.phone = phone ?? user.phone;
+
+        if (password && !old_password) {
+            throw new AppError(
+                'Você precisa informar a senha antiga para alterar a senha.',
+            );
+        }
+
+        if (password && old_password) {
+            const checkOldPassword = await compare(old_password, user.password);
+            if (!checkOldPassword) {
+                throw new AppError('Senha antiga incorreta.');
+            }
+
+            user.password = await hash(password, 8);
+        }
+
+        await database.run(
+            `
+        UPDATE users SET 
+        name = ?,
+        email = ?,
+        password = ?,
+        address = ?,
+        phone = ?,
+        updated_at = DATETIME('now')
+        WHERE id = ?`,
+            [
+                user.name,
+                user.email,
+                user.password,
+                user.address,
+                user.phone,
+                user_id,
+            ],
+        );
+
+        return res.status(200).json();
     }
 }
 
-module.exports = UsersController();
+module.exports = UsersController;
