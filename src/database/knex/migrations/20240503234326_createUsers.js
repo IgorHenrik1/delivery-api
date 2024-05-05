@@ -10,6 +10,7 @@ exports.up = (knex) =>
         table.text('password');
         table.text('address');
         table.text('phone');
+        table.text('avatar');
 
         table.timestamp('created_at').defaultTo(knex.fn.now());
         table.timestamp('updated_at').defaultTo(knex.fn.now());
